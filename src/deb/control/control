@@ -1,8 +1,9 @@
-Package: elasticsearch
+Package: fk-logsrch-es
 Version: [[version]]
 Architecture: all
 Maintainer: Elasticsearch Team <info@elasticsearch.com>
 Depends: libc6, adduser
+Conflicts: elasticsearch
 Section: web
 Priority: optional
 Homepage: http://www.elasticsearch.org/
