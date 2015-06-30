@@ -557,11 +557,16 @@ public class SearchService extends AbstractLifecycleComponent<SearchService> {
     }
 
     private void validateQueryAndFilter(SearchContext context) {
-        Set<Object> set = new HashSet<>();
-        walkAndCall(context, new FilterFinder(), set);
+        try {
+            Set<Object> set = new HashSet<>();
+            walkAndCall(context, new FilterFinder(), set);
+        } catch (Exception e) {
+
+        }
     }
 
     private void walkAndCall(Object o, FilterFinder listener, Set<Object> set) {
+        //if (true) return;
         if (set.contains(o)) return;
         if (o == null) return;
         set.add(o);
