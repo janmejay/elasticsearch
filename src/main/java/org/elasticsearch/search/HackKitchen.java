@@ -42,7 +42,6 @@ public class HackKitchen {
             Map<Class, Set<Object>> map = new HashMap<>();
             walkAndCall(context, map);
         } catch (Exception e) {
-            System.err.println("Exception occured: " + e);
         }
     }
 
