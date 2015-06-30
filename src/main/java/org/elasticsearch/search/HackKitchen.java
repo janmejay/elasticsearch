@@ -19,17 +19,19 @@
 
 package org.elasticsearch.search;
 
+import org.apache.lucene.queries.FilterClause;
+import org.apache.lucene.search.Filter;
+import org.apache.lucene.search.FilteredQuery;
 import org.apache.lucene.search.NumericRangeFilter;
+import org.apache.lucene.search.Query;
 import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.Loggers;
+import org.elasticsearch.common.lucene.search.XBooleanFilter;
 import org.elasticsearch.search.internal.SearchContext;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * @understands unadultrated ugly hacks
@@ -39,52 +41,77 @@ public class HackKitchen {
 
     public void validateQueryAndFilter(SearchContext context) {
         try {
-            Map<Class, Set<Object>> map = new HashMap<>();
-            walkAndCall(context, map);
+            List<XBooleanFilter> instances = findType(context, XBooleanFilter.class);
+            for (XBooleanFilter instance : instances) {
+                List<NumericRangeFilter> nrfs = findType(instances, NumericRangeFilter.class);
+            }
         } catch (Exception e) {
         }
     }
 
-    private void doValidate(Object o) {
-        if (o instanceof NumericRangeFilter) {
-            logger.error("FOUND A FILTER: " + o);
+    private <T> void checkTypeAndAdd(Object o, Class<T> targetType, List<T> collector) {
+        if (targetType.isAssignableFrom(o.getClass())) {
+            collector.add((T) o);
         }
     }
 
-    private void walkAndCall(Object o, Map<Class, Set<Object>> seen) {
-        //if (true) return;
+    private <T> List<T> findType(Object o, Class<T> type) {
+        Map<Class, Set<Object>> seen = new HashMap<>();
+        List<T> collector = new ArrayList<>();
+        findTypeRec(o, seen, type, collector);
+        return collector;
+    }
+
+    private <T> void findTypeRec(Object o, Map<Class, Set<Object>> seen, Class<T> targetType, List<T> collector) {
+        if (o == null) return;
         Set<Object> seenSet = seen.get(o.getClass());
         if (seenSet == null) {
             seenSet = new HashSet<>();
             seen.put(o.getClass(), seenSet);
         }
         if (seenSet.contains(o)) return;
-        if (o == null) return;
         seenSet.add(o);
-        doValidate(o);
+        checkTypeAndAdd(o, targetType, collector);
         Field[] fields = o.getClass().getDeclaredFields();
         for (Field field : fields) {
             int mod = field.getModifiers();
             if (field.isSynthetic() || field.isEnumConstant() || (mod & Modifier.STATIC) != 0) {
                 continue;
             }
-            if (field.getType() == boolean.class
-                    || field.getType() == byte.class
-                    || field.getType() == char.class
-                    || field.getType() == short.class
-                    || field.getType() == int.class
-                    || field.getType() == long.class
-                    || field.getType() == float.class
-                    || field.getType() == double.class
-                    || field.getType() == void.class) {
+            Class<?> t = field.getType();
+            if (t == boolean.class
+                    || t == byte.class
+                    || t == char.class
+                    || t == short.class
+                    || t == int.class
+                    || t == long.class
+                    || t == float.class
+                    || t == double.class
+                    || t == void.class) {
                 continue;
             }
+            if (t.getCanonicalName().startsWith("java.lang.")) continue;
+
             field.setAccessible(true);
             Object o1 = null;
             try {
                 o1 = field.get(o);
-                walkAndCall(o1, seen);
+                if (List.class.isAssignableFrom(t)) {
+                    for (Object o2 : (List) o1) {
+                        findTypeRec(o2, seen, targetType, collector);
+                    }
+                } else if (Map.class.isAssignableFrom(t)) {
+                    Map o2 = (Map<Object, Object>) o1;
+                    for (Object o3k : o2.keySet()) {
+                        Object o3 = o2.get(o3k);
+                        findTypeRec(o3k, seen, targetType, collector);
+                        findTypeRec(o3, seen, targetType, collector);
+                    }
+                } else {
+                    findTypeRec(o1, seen, targetType, collector);
+                }
             } catch (IllegalAccessException e) {
+            } catch (NullPointerException e) {
             }
         }
     }
