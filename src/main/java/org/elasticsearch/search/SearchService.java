@@ -105,8 +105,6 @@ public class SearchService extends AbstractLifecycleComponent<SearchService> {
     private static final String KEEPALIVE_INTERVAL_COMPONENENT_KEY = "keep_alive_interval";
     public static final String KEEPALIVE_INTERVAL_KEY = "search." + KEEPALIVE_INTERVAL_COMPONENENT_KEY;
 
-    private static final ESLogger logger = Loggers.getLogger("hackery");
-
     private final ThreadPool threadPool;
 
     private final ClusterService clusterService;
@@ -539,45 +537,13 @@ public class SearchService extends AbstractLifecycleComponent<SearchService> {
             }
             context.keepAlive(keepAlive);
 
-            validateQueryAndFilter(context);
+            new HackKitchen().validateQueryAndFilter(context);
         } catch (Throwable e) {
             context.close();
             throw ExceptionsHelper.convertToRuntime(e);
         }
 
         return context;
-    }
-
-    void doValidate(Object o) {
-        if (o instanceof NumericRangeFilter) {
-            logger.error("FOUND A FILTER: " + o);
-        }
-    }
-
-    private void validateQueryAndFilter(SearchContext context) {
-        try {
-            Set<Object> set = new HashSet<>();
-            walkAndCall(context, set);
-        } catch (Exception e) {
-
-        }
-    }
-
-    private void walkAndCall(Object o, Set<Object> set) {
-        if (true) return;
-        if (set.contains(o)) return;
-        if (o == null) return;
-        set.add(o);
-        doValidate(o);
-        Field[] fields = o.getClass().getDeclaredFields();
-        for (Field field : fields) {
-            field.setAccessible(true);
-            try {
-                Object o1 = field.get(o);
-                walkAndCall(o1, set);
-            } catch (IllegalAccessException e) {
-            }
-        }
     }
 
     public boolean freeContext(long id) {
