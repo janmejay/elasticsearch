@@ -43,13 +43,15 @@ public class HackKitchen {
         try {
             List<XBooleanFilter> instances = findType(context, XBooleanFilter.class);
             for (XBooleanFilter instance : instances) {
+                logger.debug("------------------------------");
+                logger.debug("XBooleanFilter: {}", instance);
                 List<NumericRangeFilter> nrfs = findType(instances, NumericRangeFilter.class);
             }
         } catch (Exception e) {
         }
     }
 
-    private <T> void checkTypeAndAdd(Object o, Class<T> targetType, List<T> collector) {
+    private <T> void checkTypeAndAdd(Object o, Class<T> targetType, List<T> collector, int level) {
         if (targetType.isAssignableFrom(o.getClass())) {
             collector.add((T) o);
         }
@@ -58,11 +60,11 @@ public class HackKitchen {
     private <T> List<T> findType(Object o, Class<T> type) {
         Map<Class, Set<Object>> seen = new HashMap<>();
         List<T> collector = new ArrayList<>();
-        findTypeRec(o, seen, type, collector);
+        findTypeRec(o, seen, type, collector, 0);
         return collector;
     }
 
-    private <T> void findTypeRec(Object o, Map<Class, Set<Object>> seen, Class<T> targetType, List<T> collector) {
+    private <T> void findTypeRec(Object o, Map<Class, Set<Object>> seen, Class<T> targetType, List<T> collector, int level) {
         if (o == null) return;
         Set<Object> seenSet = seen.get(o.getClass());
         if (seenSet == null) {
@@ -71,7 +73,7 @@ public class HackKitchen {
         }
         if (seenSet.contains(o)) return;
         seenSet.add(o);
-        checkTypeAndAdd(o, targetType, collector);
+        checkTypeAndAdd(o, targetType, collector, level);
         Field[] fields = o.getClass().getDeclaredFields();
         for (Field field : fields) {
             int mod = field.getModifiers();
@@ -98,17 +100,17 @@ public class HackKitchen {
                 o1 = field.get(o);
                 if (List.class.isAssignableFrom(t)) {
                     for (Object o2 : (List) o1) {
-                        findTypeRec(o2, seen, targetType, collector);
+                        findTypeRec(o2, seen, targetType, collector, level + 1);
                     }
                 } else if (Map.class.isAssignableFrom(t)) {
                     Map o2 = (Map<Object, Object>) o1;
                     for (Object o3k : o2.keySet()) {
                         Object o3 = o2.get(o3k);
-                        findTypeRec(o3k, seen, targetType, collector);
-                        findTypeRec(o3, seen, targetType, collector);
+                        findTypeRec(o3k, seen, targetType, collector, level + 1);
+                        findTypeRec(o3, seen, targetType, collector, level + 1);
                     }
                 } else {
-                    findTypeRec(o1, seen, targetType, collector);
+                    findTypeRec(o1, seen, targetType, collector, level + 1);
                 }
             } catch (IllegalAccessException e) {
             } catch (NullPointerException e) {
