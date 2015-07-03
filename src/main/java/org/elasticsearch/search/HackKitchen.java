@@ -21,6 +21,7 @@ package org.elasticsearch.search;
 
 import org.apache.lucene.search.NumericRangeFilter;
 import org.apache.lucene.search.NumericRangeQuery;
+import org.apache.lucene.search.Query;
 import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.Loggers;
 import org.elasticsearch.common.lucene.search.XBooleanFilter;
@@ -57,6 +58,10 @@ public class HackKitchen {
             }
 
             //Sanitization 2: don't allow anything other than '@timestamp' and 'host' in filters
+
+            //Sanitization 3: don't allow infix or suffix wildcards
+            List<Query> qs = findType(context, Query.class);
+            logger.debug("Queries: {}", qs);
         } catch (Exception e) {
             logger.error("Failed to hack the query.", e);
         }
@@ -104,6 +109,9 @@ public class HackKitchen {
     }
 
     private <T> void findTypeRec(Object o, Map<Class, Set<Object>> seen, Class<T> targetType, List<T> collector, int level) {
+        if (level > 50) {
+            return;
+        }
         try {
             if (o == null) return;
             Class<?> oType = o.getClass();
