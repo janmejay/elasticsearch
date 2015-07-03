@@ -22,6 +22,8 @@ package org.elasticsearch.search;
 import org.apache.lucene.search.NumericRangeFilter;
 import org.apache.lucene.search.NumericRangeQuery;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.WildcardQuery;
+import org.elasticsearch.common.breaker.CircuitBreakingException;
 import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.Loggers;
 import org.elasticsearch.common.lucene.search.XBooleanFilter;
@@ -57,11 +59,19 @@ public class HackKitchen {
                 }
             }
 
-            //Sanitization 2: don't allow anything other than '@timestamp' and 'host' in filters
+            //Sanitization 2: don't allow anything other than '@timestamp', 'host' and 'tag' in filters
 
             //Sanitization 3: don't allow infix or suffix wildcards
-            List<Query> qs = findType(context, Query.class);
-            logger.debug("Queries: {}", qs);
+            List<WildcardQuery> qs = findType(context, WildcardQuery.class);
+            if (qs.size() > 0) {
+                logger.debug("Killing wildcard query... {}", qs);
+                throw new CircuitBreakingException("Wildcard query is not permitted.");
+            }
+
+            //Sanitization 4: block most fields for faceting
+
+        } catch (CircuitBreakingException e) {
+            throw e;
         } catch (Exception e) {
             logger.error("Failed to hack the query.", e);
         }
