@@ -19,14 +19,14 @@
 
 package org.elasticsearch.search;
 
-import org.apache.lucene.search.NumericRangeFilter;
 import org.apache.lucene.search.NumericRangeQuery;
-import org.apache.lucene.search.Query;
 import org.apache.lucene.search.WildcardQuery;
 import org.elasticsearch.common.breaker.CircuitBreakingException;
 import org.elasticsearch.common.logging.ESLogger;
 import org.elasticsearch.common.logging.Loggers;
-import org.elasticsearch.common.lucene.search.XBooleanFilter;
+import org.elasticsearch.search.facet.FacetExecutor;
+import org.elasticsearch.search.facet.SearchContextFacets;
+import org.elasticsearch.search.facet.datehistogram.CountDateHistogramFacetExecutor;
 import org.elasticsearch.search.internal.SearchContext;
 
 import java.lang.reflect.Field;
@@ -69,6 +69,17 @@ public class HackKitchen {
             }
 
             //Sanitization 4: block most fields for faceting
+            SearchContextFacets facets = context.facets();
+            if (facets != null) {
+                for (SearchContextFacets.Entry entry : facets.entries()) {
+                    FacetExecutor facetExecutor = entry.getFacetExecutor();
+                    if (facetExecutor instanceof CountDateHistogramFacetExecutor) {
+                        CountDateHistogramFacetExecutor e = (CountDateHistogramFacetExecutor) facetExecutor;
+                        logger.debug("Found @timestamp histo: {}", e);
+                    }
+                }
+                logger.debug("Facets: {}", facets);
+            }
 
         } catch (CircuitBreakingException e) {
             throw e;
@@ -81,6 +92,28 @@ public class HackKitchen {
             long diff = (Long) nrq.getMax() - (Long) nrq.getMin();
             logger.debug("Diff({}): {} - {} = {}", nrq.getField(), nrq.getMax(), nrq.getMin(), diff);
         }
+    }
+
+    private Object getFieldValue(Object o, List<String> fieldNames) {
+        Class<?> type = o.getClass();
+        for (String fieldName : fieldNames) {
+            boolean found = false;
+            do {
+                try {
+                    Field field = type.getDeclaredField(fieldName);
+                    field.setAccessible(true);
+                    o = field.get(o);
+                    found = true;
+                    break;
+                } catch (NoSuchFieldException e) {
+                    type = type.getSuperclass();
+                } catch (IllegalAccessException e) {
+                    throw new RuntimeException(e);
+                }
+            } while (!OBJECT_CLASS_NAME.equals(type.getCanonicalName()));
+            if (! found) throw new RuntimeException("Couldn't find field");
+        }
+        return o;
     }
 
     private void setValue(Object o, String name, Object value) {
