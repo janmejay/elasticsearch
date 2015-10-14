@@ -40,7 +40,8 @@ public class HackKitchen {
     public void validateQueryAndFilter(SearchContext context) {
         try {
             //Sanitization 1: allow only upto 6 hours of viewing window
-            List<NumericRangeQuery> nrqs = findType(context, NumericRangeQuery.class);
+            List<XBooleanFilter> instances = findType(context, XBooleanFilter.class);
+            List<NumericRangeQuery> nrqs = findType(instances, NumericRangeQuery.class);
             for (NumericRangeQuery nrq : nrqs) {
                 String field = nrq.getField();
                 if ("@timestamp".equals(field)) {
@@ -55,16 +56,7 @@ public class HackKitchen {
                     }
                 }
             }
-
-            //Sanitization 2: don't allow anything other than '@timestamp' and 'host' in filters
         } catch (Exception e) {
-            logger.error("Failed to hack the query.", e);
-        }
-
-        List<NumericRangeQuery> nrqs = findType(context, NumericRangeQuery.class);
-        for (NumericRangeQuery nrq : nrqs) {
-            long diff = (Long) nrq.getMax() - (Long) nrq.getMin();
-            logger.debug("Diff({}): {} - {} = {}", nrq.getField(), nrq.getMax(), nrq.getMin(), diff);
         }
     }
 
@@ -72,7 +64,7 @@ public class HackKitchen {
         Class<?> type = o.getClass();
         do {
             try {
-                Field field = type.getDeclaredField(name);
+                Field field = type.getField(name);
                 field.setAccessible(true);
                 field.set(o, value);
                 return;
@@ -81,8 +73,7 @@ public class HackKitchen {
             } catch (IllegalAccessException e) {
                 throw new RuntimeException(e);
             }
-        } while (!OBJECT_CLASS_NAME.equals(type.getCanonicalName()));
-        logger.debug("Failed to set field: {}", name);
+        } while (OBJECT_CLASS_NAME.equals(type.getCanonicalName()));
     }
 
     private <T> void checkTypeAndAdd(Object o, Class<T> targetType, List<T> collector, int level) {
@@ -104,65 +95,60 @@ public class HackKitchen {
     }
 
     private <T> void findTypeRec(Object o, Map<Class, Set<Object>> seen, Class<T> targetType, List<T> collector, int level) {
-        try {
-            if (o == null) return;
-            Class<?> oType = o.getClass();
-            Set<Object> seenSet = seen.get(oType);
-            if (seenSet == null) {
-                seenSet = new HashSet<>();
-                seen.put(oType, seenSet);
+        if (o == null) return;
+        Class<?> oType = o.getClass();
+        Set<Object> seenSet = seen.get(oType);
+        if (seenSet == null) {
+            seenSet = new HashSet<>();
+            seen.put(oType, seenSet);
+        }
+        if (seenSet.contains(o)) return;
+        seenSet.add(o);
+        checkTypeAndAdd(o, targetType, collector, level);
+        if (List.class.isAssignableFrom(oType)) {
+            for (Object o1 : (List) o) {
+                findTypeRec(o1, seen, targetType, collector, level + 1);
             }
-            if (seenSet.contains(o)) return;
-            seenSet.add(o);
-            checkTypeAndAdd(o, targetType, collector, level);
-            if (List.class.isAssignableFrom(oType)) {
-                for (Object o1 : (List) o) {
-                    findTypeRec(o1, seen, targetType, collector, level + 1);
-                }
-            } else if (Map.class.isAssignableFrom(oType)) {
-                Map o1 = (Map<Object, Object>) o;
-                for (Object o2k : o1.keySet()) {
-                    Object o2v = o1.get(o2k);
-                    findTypeRec(o2k, seen, targetType, collector, level + 1);
-                    findTypeRec(o2v, seen, targetType, collector, level + 1);
-                }
-            } else {
-                do {
-                    Field[] fields = oType.getDeclaredFields();
-                    for (Field field : fields) {
-                        int mod = field.getModifiers();
-                        if (field.isSynthetic() || field.isEnumConstant() || (mod & Modifier.STATIC) != 0) {
-                            continue;
-                        }
-                        Class<?> t = field.getType();
-                        if (t == boolean.class
-                                || t == byte.class
-                                || t == char.class
-                                || t == short.class
-                                || t == int.class
-                                || t == long.class
-                                || t == float.class
-                                || t == double.class
-                                || t == void.class) {
-                            continue;
-                        }
-                        if (t.getCanonicalName().startsWith("java.lang.")) continue;
-
-                        field.setAccessible(true);
-                        Object o1 = null;
-                        try {
-                            o1 = field.get(o);
-                            findTypeRec(o1, seen, targetType, collector, level + 1);
-                        } catch (IllegalAccessException e) {
-                        } catch (NullPointerException e) {
-                        }
+        } else if (Map.class.isAssignableFrom(oType)) {
+            Map o1 = (Map<Object, Object>) o;
+            for (Object o2k : o1.keySet()) {
+                Object o2v = o1.get(o2k);
+                findTypeRec(o2k, seen, targetType, collector, level + 1);
+                findTypeRec(o2v, seen, targetType, collector, level + 1);
+            }
+        } else {
+            do {
+                Field[] fields = oType.getDeclaredFields();
+                for (Field field : fields) {
+                    int mod = field.getModifiers();
+                    if (field.isSynthetic() || field.isEnumConstant() || (mod & Modifier.STATIC) != 0) {
+                        continue;
                     }
-                    oType = oType.getSuperclass();
-                } while (!oType.getCanonicalName().startsWith("java.lang."));
-            }
-        } catch (ConcurrentModificationException | UnsupportedOperationException e) {
-            //CME: charm concurrently-modified-week-hash-maps
-            //UOE: DocLookup is a map which throws up when looking up keys, yeah, that is what I thought
+                    Class<?> t = field.getType();
+                    if (t == boolean.class
+                            || t == byte.class
+                            || t == char.class
+                            || t == short.class
+                            || t == int.class
+                            || t == long.class
+                            || t == float.class
+                            || t == double.class
+                            || t == void.class) {
+                        continue;
+                    }
+                    if (t.getCanonicalName().startsWith("java.lang.")) continue;
+
+                    field.setAccessible(true);
+                    Object o1 = null;
+                    try {
+                        o1 = field.get(o);
+                        findTypeRec(o1, seen, targetType, collector, level + 1);
+                    } catch (IllegalAccessException e) {
+                    } catch (NullPointerException e) {
+                    }
+                }
+                oType = oType.getSuperclass();
+            } while (!oType.getCanonicalName().startsWith("java.lang."));
         }
     }
 }
