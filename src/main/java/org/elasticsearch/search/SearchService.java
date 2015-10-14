@@ -25,7 +25,6 @@ import com.carrotsearch.hppc.cursors.ObjectCursor;
 import com.google.common.collect.ImmutableMap;
 import org.apache.lucene.index.AtomicReaderContext;
 import org.apache.lucene.index.NumericDocValues;
-import org.apache.lucene.search.NumericRangeFilter;
 import org.apache.lucene.search.TopDocs;
 import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.ElasticsearchParseException;
@@ -40,8 +39,6 @@ import org.elasticsearch.common.bytes.BytesReference;
 import org.elasticsearch.common.component.AbstractLifecycleComponent;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.lease.Releasables;
-import org.elasticsearch.common.logging.ESLogger;
-import org.elasticsearch.common.logging.Loggers;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.util.BigArrays;
@@ -83,9 +80,10 @@ import org.elasticsearch.search.warmer.IndexWarmersMetaData;
 import org.elasticsearch.threadpool.ThreadPool;
 
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.nio.charset.Charset;
-import java.util.*;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledFuture;
@@ -105,7 +103,6 @@ public class SearchService extends AbstractLifecycleComponent<SearchService> {
     private static final String KEEPALIVE_INTERVAL_COMPONENENT_KEY = "keep_alive_interval";
     public static final String KEEPALIVE_INTERVAL_KEY = "search." + KEEPALIVE_INTERVAL_COMPONENENT_KEY;
 
-    private static final ESLogger logger = Loggers.getLogger("hackery");
 
     private final ThreadPool threadPool;
 
@@ -538,42 +535,12 @@ public class SearchService extends AbstractLifecycleComponent<SearchService> {
                 keepAlive = request.scroll().keepAlive().millis();
             }
             context.keepAlive(keepAlive);
-
-            validateQueryAndFilter(context);
         } catch (Throwable e) {
             context.close();
             throw ExceptionsHelper.convertToRuntime(e);
         }
 
         return context;
-    }
-
-    private static class FilterFinder {
-        void call(Object o) {
-            if (o instanceof NumericRangeFilter) {
-                logger.error("FOUND A FILTER: " + o);
-            }
-        }
-    }
-
-    private void validateQueryAndFilter(SearchContext context) {
-        Set<Object> set = new HashSet<>();
-        walkAndCall(context, new FilterFinder(), set);
-    }
-
-    private void walkAndCall(Object o, FilterFinder listener, Set<Object> set) {
-        if (set.contains(o)) return;
-        if (o == null) return;
-        set.add(o);
-        listener.call(o);
-        Field[] fields = o.getClass().getDeclaredFields();
-        for (Field field : fields) {
-            field.setAccessible(true);
-            try {
-                Object o1 = field.get(o);
-                walkAndCall(o1, listener, set);
-            } catch (IllegalAccessException e) { }
-        }
     }
 
     public boolean freeContext(long id) {
