@@ -548,35 +548,36 @@ public class SearchService extends AbstractLifecycleComponent<SearchService> {
         return context;
     }
 
-    void doValidate(Object o) {
-        if (o instanceof NumericRangeFilter) {
-            logger.error("FOUND A FILTER: " + o);
+    private static class FilterFinder {
+        void call(Object o) {
+            if (o instanceof NumericRangeFilter) {
+                logger.error("FOUND A FILTER: " + o);
+            }
         }
     }
 
     private void validateQueryAndFilter(SearchContext context) {
         try {
             Set<Object> set = new HashSet<>();
-            walkAndCall(context, set);
+            walkAndCall(context, new FilterFinder(), set);
         } catch (Exception e) {
 
         }
     }
 
-    private void walkAndCall(Object o, Set<Object> set) {
-        if (true) return;
+    private void walkAndCall(Object o, FilterFinder listener, Set<Object> set) {
+        //if (true) return;
         if (set.contains(o)) return;
         if (o == null) return;
         set.add(o);
-        doValidate(o);
+        listener.call(o);
         Field[] fields = o.getClass().getDeclaredFields();
         for (Field field : fields) {
             field.setAccessible(true);
             try {
                 Object o1 = field.get(o);
-                walkAndCall(o1, set);
-            } catch (IllegalAccessException e) {
-            }
+                walkAndCall(o1, listener, set);
+            } catch (IllegalAccessException e) { }
         }
     }
 
